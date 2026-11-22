@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="km">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SQAP Check-in</title>
+<!-- Official Telegram Mini App script -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { --navy:#0f2747; --green:#1f9d55; --red:#d64545; --amber:#f5a524; --soft:#eef3f9; --ink:#13213a; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { height:100%; }
+  body { font-family:'Battambang','Khmer OS Battambang','Noto Sans Khmer',system-ui,sans-serif; background:#fff; color:var(--ink);
+         display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:24px 16px; }
+  .icon { font-size:96px; line-height:1.1; }
+  .spin { animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform:scale(1); opacity:1 } 50% { transform:scale(1.15); opacity:.6 } }
+  h1 { font-size:30px; line-height:1.6; margin-top:16px; }
+  p { font-size:22px; line-height:1.7; margin-top:10px; color:#3c4a63; }
+  button { display:block; width:100%; max-width:420px; margin-top:18px; border:0; border-radius:18px; padding:18px 12px 22px;
+           font:700 26px/1.4 inherit; font-family:inherit; color:#fff; background:var(--green); box-shadow:0 6px 0 rgba(0,0,0,.18); }
+  button.alt { background:var(--navy); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+  <div id="icon" class="icon spin">📍</div>
+  <h1 id="title">កំពុងរកទីតាំង…</h1>
+  <p id="msg">សូមរង់ចាំ</p>
+  <button id="retry" class="hidden" onclick="start()">🔄 ព្យាយាមម្តងទៀត</button>
+  <button id="settings" class="alt hidden" onclick="openSettings()">⚙️ អនុញ្ញាតទីតាំង</button>
+
+<script>
+  // Reads the phone's real GPS and hands it to the bot with sendData().
+  // No point can be picked on a map here: only the device location is used.
+  var tg = window.Telegram && window.Telegram.WebApp;
+  var sent = false;
+
+  function show(icon, title, msg, retry, settings) {
+    var i = document.getElementById('icon');
+    i.textContent = icon; i.className = 'icon' + (icon === '📍' ? ' spin' : '');
+    document.getElementById('title').textContent = title;
+    document.getElementById('msg').textContent = msg || '';
+    document.getElementById('retry').className = retry ? '' : 'hidden';
+    document.getElementById('settings').className = settings ? 'alt' : 'alt hidden';
+  }
+
+  function deliver(lat, lon, acc, src) {
+    if (sent) return; sent = true;
+    show('✅', 'រួចរាល់', '');
+    tg.sendData(JSON.stringify({ v: 1, lat: lat, lon: lon, acc: acc || 0, ts: Date.now(), src: src }));
+    setTimeout(function () { tg.close(); }, 800);
+  }
+
+  function failDenied() { show('❌', 'Telegram មិនទាន់អនុញ្ញាតទីតាំង', 'ចុច ⚙️ ហើយបើក Location សម្រាប់ Telegram', true, true); }
+  function failNoFix() { show('❌', 'រកទីតាំងមិនឃើញ', 'ចេញទៅទីវាល ហើយព្យាយាមម្តងទៀត', true, false); }
+
+  // 1st choice: Telegram's own location manager (Bot API 8.0+). 2nd: the browser GPS.
+  function start() {
+    sent = false;
+    show('📍', 'កំពុងរកទីតាំង…', 'សូមរង់ចាំ');
+    var lm = tg.LocationManager;
+    if (lm && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
+      var go = function () {
+        if (!lm.isLocationAvailable) return browserGps();
+        lm.getLocation(function (loc) {
+          if (!loc) return lm.isAccessGranted === false ? failDenied() : browserGps();
+          deliver(loc.latitude, loc.longitude, loc.horizontal_accuracy, 'tg');
+        });
+      };
+      lm.isInited ? go() : lm.init(go);
+    } else {
+      browserGps();
+    }
+  }
+
+  function browserGps() {
+    if (!navigator.geolocation) return failNoFix();
+    navigator.geolocation.getCurrentPosition(
+      function (p) { deliver(p.coords.latitude, p.coords.longitude, p.coords.accuracy, 'geo'); },
+      function (e) { e.code === 1 ? failDenied() : failNoFix(); },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+  }
+
+  function openSettings() {
+    try { tg.LocationManager.openSettings(); } catch (e) {}
+  }
+
+  if (!tg || !tg.platform || tg.platform === 'unknown') {
+    show('📱', 'បើកតាម Telegram ប៉ុណ្ណោះ', 'ចុចប៊ូតុង ✅ មកធ្វើការ ក្នុង Telegram');
+  } else {
+    tg.ready(); tg.expand();
+    start();
+  }
+</script>
+</body>
+</html>
