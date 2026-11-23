@@ -48,37 +48,42 @@
   function deliver(lat, lon, acc, src) {
     if (sent) return; sent = true;
     show('✅', 'រួចរាល់', '');
-    tg.sendData(JSON.stringify({ v: 1, lat: lat, lon: lon, acc: acc || 0, ts: Date.now(), src: src }));
+    tg.sendData(JSON.stringify({ v: 2, lat: lat, lon: lon, acc: acc || 0, ts: Date.now(), src: src, p: tg.platform + ' ' + tg.version }));
     setTimeout(function () { tg.close(); }, 800);
   }
 
   function failDenied() { show('❌', 'Telegram មិនទាន់អនុញ្ញាតទីតាំង', 'ចុច ⚙️ ហើយបើក Location សម្រាប់ Telegram', true, true); }
   function failNoFix() { show('❌', 'រកទីតាំងមិនឃើញ', 'ចេញទៅទីវាល ហើយព្យាយាមម្តងទៀត', true, false); }
 
-  // 1st choice: Telegram's own location manager (Bot API 8.0+). 2nd: the browser GPS.
+  // Android: Telegram's location manager can hand back the phone's LAST KNOWN position (seen 2026-11-23:
+  // 13.8 km off), so ask for a brand-new GPS reading first (maximumAge 0) and only fall back to Telegram's.
+  // iPhone: Telegram's location manager first (tested OK), browser GPS as fallback.
   function start() {
     sent = false;
     show('📍', 'កំពុងរកទីតាំង…', 'សូមរង់ចាំ');
-    var lm = tg.LocationManager;
-    if (lm && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0')) {
-      var go = function () {
-        if (!lm.isLocationAvailable) return browserGps();
-        lm.getLocation(function (loc) {
-          if (!loc) return lm.isAccessGranted === false ? failDenied() : browserGps();
-          deliver(loc.latitude, loc.longitude, loc.horizontal_accuracy, 'tg');
-        });
-      };
-      lm.isInited ? go() : lm.init(go);
-    } else {
-      browserGps();
-    }
+    if (tg.platform === 'android' && navigator.geolocation) return browserGps(tgLocation, 'geo-a');
+    tgLocation();
   }
 
-  function browserGps() {
-    if (!navigator.geolocation) return failNoFix();
+  function tgLocation() {
+    var lm = tg.LocationManager;
+    if (!(lm && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0'))) return browserGps(null, 'geo');
+    var go = function () {
+      if (!lm.isLocationAvailable) return browserGps(null, 'geo');
+      lm.getLocation(function (loc) {
+        if (!loc) return lm.isAccessGranted === false ? failDenied() : browserGps(null, 'geo');
+        deliver(loc.latitude, loc.longitude, loc.horizontal_accuracy, 'tg');
+      });
+    };
+    lm.isInited ? go() : lm.init(go);
+  }
+
+  /** Fresh GPS from the phone (no cached position). If it fails and a fallback is given, use that instead. */
+  function browserGps(fallback, src) {
+    if (!navigator.geolocation) return fallback ? fallback() : failNoFix();
     navigator.geolocation.getCurrentPosition(
-      function (p) { deliver(p.coords.latitude, p.coords.longitude, p.coords.accuracy, 'geo'); },
-      function (e) { e.code === 1 ? failDenied() : failNoFix(); },
+      function (p) { deliver(p.coords.latitude, p.coords.longitude, p.coords.accuracy, src); },
+      function (e) { if (fallback) return fallback(); e.code === 1 ? failDenied() : failNoFix(); },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   }
 
@@ -87,7 +92,7 @@
   }
 
   if (!tg || !tg.platform || tg.platform === 'unknown') {
-    show('📱', 'បើកតាម Telegram ប៉ុណ្ណោះ', 'ចុចប៊ូតុង ✅ មកធ្វើការ ក្នុង Telegram');
+    show('📱', 'បើកតាម Telegram ប៉ុណ្ណោះ', 'ចុចប៊ូតុង ✅ ក្នុង Telegram');
   } else {
     tg.ready(); tg.expand();
     start();
